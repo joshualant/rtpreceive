@@ -142,84 +142,67 @@ RTP: ver 2; pad 0; ext 0; cc 0; mark 1; pt  96; seq  29382; ts 3827743364; ssrc 
 #include <conio.h>
 #include <winsock2.h>
 
+#include "rtppacket.h"
+
 
 #define VERSION_STR  "V1.0"
 
 #define MAX_BUFFER_LEN      (16384)
 
-#define RTP_MAX_CSCR_COUNT  (16)
+
+bool zeroTimestamp_flag = true;
 
 
-struct RtpPacket {
-    char            version;
-    char            padding;
-    char            extension;
-    char            cscr_count;
-    char            marker;
-    short           payload_type;
-    int             sequence_number;
-    unsigned int    time_stamp;
-    unsigned int    ssrc;
-    unsigned int    cscr[RTP_MAX_CSCR_COUNT];
-    const void     *payload_data;
-};
+// open input socket for listening
+SOCKET open_input(unsigned short port, sockaddr *addr, int addrlen) {
 
+    // create socket
+    SOCKET soc = INVALID_SOCKET;
+    soc = socket(PF_INET, SOCK_DGRAM, 0);
+    if (soc == INVALID_SOCKET) {
+        fprintf(stderr, "Input socket creation failed\n");
+    } else {
 
-int parse_rtp(RtpPacket *rtp, const void *data, int len) {
-    int rc = -1;
-    if (len >= (3 * 4)) {
-        int i = 0;
-        unsigned char byte = 0;
-        const unsigned char *buf =
-            static_cast <const unsigned char *> (data);
-        byte = buf[i++];
-        rtp->version      = (byte & 0xC0) >> 6;
-        rtp->padding      = (byte & 0x20) >> 5;
-        rtp->extension    = (byte & 0x10) >> 4;
-        rtp->cscr_count   = (byte & 0x0F) >> 0;
-        byte = buf[i++];
-        rtp->marker       = (byte & 0x80) >> 7;
-        rtp->payload_type = (byte & 0x7F) >> 0;
-        rtp->sequence_number = (buf[i] << 8) | (buf[i+1] << 0);
-        i += 2;
-        rtp->time_stamp =
-            (buf[i] << 24) | (buf[i+1] << 16) | (buf[i+2] << 8) | (buf[i+3]);
-        i += 4;
-        rtp->ssrc =
-            (buf[i] << 24) | (buf[i+1] << 16) | (buf[i+2] << 8) | (buf[i+3]);
-        i += 4;
-        int n = rtp->cscr_count;
-        if (n < 0) {
-            n = 0;
+        // bind to local receive port
+        memset(addr, 0, addrlen);
+        sockaddr_in *config = reinterpret_cast<sockaddr_in *>(addr);
+        config->sin_family      = AF_INET;
+        config->sin_addr.s_addr = htonl(INADDR_ANY);  // listen to anyone
+        config->sin_port        = htons(port);
+        if (bind(soc, addr, addrlen) == SOCKET_ERROR) {
+            shutdown(soc, SD_RECEIVE);
+            fprintf(stderr, "Input socket bind to %hu failed\n", port);
+            closesocket(soc);
+            soc = INVALID_SOCKET;
+        } else {
+            printf("Listening on port %hu\n", port);
         }
-        if (n > RTP_MAX_CSCR_COUNT) {
-            n = RTP_MAX_CSCR_COUNT;
-        }
-        for (int j = 0; j < n; j++) {
-            rtp->cscr[j] =
-                (buf[i] << 24) | (buf[i+1] << 16) | (buf[i+2] << 8) | (buf[i+3]);
-            i += 4;
-        }
-        rtp->payload_data = &buf[i];
-
-        rc = i;
     }
 
-    return rc;
+    return soc;
 }
 
 
-void print_rtp(const RtpPacket *rtp) {
-    printf("RTP: ver%2d; pad%2d; ext%2d; cc%2d; mark%2d; pt%4d; seq %6d; ts %6u; ssrc %6u\n",
-        rtp->version,
-        rtp->padding,
-        rtp->extension,
-        rtp->cscr_count,
-        rtp->marker,
-        rtp->payload_type,
-        rtp->sequence_number,
-        rtp->time_stamp,
-        rtp->ssrc);
+// open output socket for loopback retransmission
+SOCKET open_output(unsigned short port, sockaddr *addr, int addrlen) {
+
+    // create socket
+    SOCKET soc = INVALID_SOCKET;
+    soc = socket(PF_INET, SOCK_DGRAM, 0);
+    if (soc == INVALID_SOCKET) {
+        fprintf(stderr, "Output socket creation failed\n");
+    } else {
+
+        // configure for loopback retransmission
+        memset(addr, 0, addrlen);
+        sockaddr_in *config = reinterpret_cast<sockaddr_in *>(addr);
+        config->sin_family      = AF_INET;
+        config->sin_addr.s_addr = htonl(INADDR_LOOPBACK);  // retransmit on loopback
+        config->sin_port        = htons(port);
+        printf("Retransmitting on loopback port %hu\n", port);
+    }
+
+    return soc;
 }
 
 
@@ -232,7 +215,7 @@ int main(int argc, char **argv) {
 
     // check command line
     char *basename = NULL;
-    if (argc != 2) {
+    if ((argc != 2) && (argc != 3)) {
         basename = strrchr(argv[0], '/');
         if (basename == NULL) {
             basename = strrchr(argv[0], '\\');
@@ -242,12 +225,17 @@ int main(int argc, char **argv) {
         } else {
             basename++;
         }
-        printf("Usage:   %s port\n", basename);
-        printf("         port on which to receive RTP data\n");
+        printf("Usage:   %s in_port [out_port]\n", basename);
+        printf("         in_port  on which to receive RTP data\n");
+        printf("         out_port on which to retransmit RTP data (optional)\n");
         rc = EXIT_FAILURE;
     } else {
-        unsigned short port = 0;
-        sscanf(argv[1], "%hu", &port);
+        unsigned short in_port  = 0;
+        unsigned short out_port = 0;
+        sscanf(argv[1], "%hu", &in_port);
+        if (argc >= 3) {
+            sscanf(argv[2], "%hu", &out_port);
+        }
 
         // initialize windows socket library
         WORD wVersionRequested = MAKEWORD(2, 2);            // version 2.2
@@ -257,47 +245,100 @@ int main(int argc, char **argv) {
             fprintf(stderr, "WSAStartup failure\n");
         } else {
 
-            // open socket
-            SOCKET soc = INVALID_SOCKET;
-            soc = socket(PF_INET, SOCK_DGRAM, 0);
-            if (soc == INVALID_SOCKET) {
-                fprintf(stderr, "Socket creation failed\n");
+            // open sockets
+            SOCKET in_soc  = INVALID_SOCKET;
+            SOCKET out_soc = INVALID_SOCKET;
+            sockaddr addr;
+            int addrlen = sizeof(addr);
+            in_soc = open_input(in_port, &addr, addrlen);
+            if (out_port != 0) {
+                out_soc = open_output(out_port, &addr, addrlen);
+            }
+            if ((in_soc == INVALID_SOCKET) ||
+                ((out_soc == INVALID_SOCKET) && (out_port != 0))) {
                 rc = EXIT_FAILURE;
             } else {
 
-                // bind to local receive port
-                sockaddr_in config;
-                memset(&config, 0, sizeof(config));
-                config.sin_family      = AF_INET;
-                config.sin_addr.s_addr = htonl(INADDR_ANY);
-                config.sin_port        = htons(port);
-                if (bind(soc, reinterpret_cast<sockaddr *>(&config), sizeof(config)) == SOCKET_ERROR) {
-                    fprintf(stderr, "Socket bind failed\n");
-                    rc = EXIT_FAILURE;
-                } else {
-                    printf("Listening on port %hu ...\n", port);
-
-                    // receive data
-                    char *buffer = new char[MAX_BUFFER_LEN];
-                    RtpPacket rtp;
-                    bool flag = true;
-                    while (flag) {
-                        int n = recv(soc, buffer, MAX_BUFFER_LEN, 0);
-                        if (n > 0) {
-                            parse_rtp(&rtp, buffer, n);
-                            print_rtp(&rtp);
+                // receive data
+                char *buffer = new char[MAX_BUFFER_LEN];
+                int rtp_pool_num = 0;
+                RtpPacket rtp_pool[2];
+                RtpPacket *rtp = &rtp_pool[rtp_pool_num];
+                RtpPacket *rtp_prev = rtp;
+                bool firstTime_flag = true;
+                bool flag = true;
+                while (flag) {
+                    int n = recv(in_soc, buffer, MAX_BUFFER_LEN, 0);
+                    if (n > 0) {
+                        rtp->parse(buffer, n);
+//                        rtp->print();
+                        if (!firstTime_flag) {
+                            rtp->checkOrder(rtp_prev);
                         }
-                        if (_kbhit()) {
-                            _getch();
+
+                        // retransmit
+                        if (out_soc != INVALID_SOCKET) {
+                            if (zeroTimestamp_flag) {
+                                rtp->timestamp = 0;
+                            }
+                            rtp->store(buffer, n);
+                            int m = sendto(out_soc, buffer, n, 0, &addr, addrlen);
+                            if (m != n) {
+                                fprintf(stderr, "Retransmit failure\n");
+                            }
+                        }
+
+                        // flip-flop rtp objects
+                        rtp_prev = rtp;
+                        rtp_pool_num = (rtp_pool_num + 1) % 2;
+                        rtp = &rtp_pool[rtp_pool_num];
+                    }
+
+                    // cui
+                    if (_kbhit()) {
+                        int c = _getch();
+                        if (c == 0x20) {
+                            printf("\nPaused, press Esc to exit, Space to single-step, or Enter to resume ...");
+                            c = _getch();
+                            printf("\n");
+                        }
+                        switch (c) {
+
+                        case 0x1B:  // escape
                             flag = false;
+                            break;
+
+                        case 0x20:  // space
+                            _ungetch(c);
+                            break;
+
+                        case 't':
+                            zeroTimestamp_flag = true;
+                            printf("Setting retransmit timestamp to zero\n");
+                            break;
+
+                        case 'T':
+                            zeroTimestamp_flag = false;
+                            printf("Not setting retransmit timestamp to zero\n");
+                            break;
+
+                        default:
+                            break;
                         }
                     }
-                    delete []buffer;
+                    firstTime_flag = false;
                 }
+                delete []buffer;
+            }
 
-                // close socket
-                shutdown(soc, SD_SEND);
-                closesocket(soc);
+            // close sockets
+            if (out_soc != INVALID_SOCKET) {
+                shutdown(out_soc, SD_SEND);
+                closesocket(out_soc);
+            }
+            if (in_soc != INVALID_SOCKET) {
+                shutdown(in_soc, SD_RECEIVE);
+                closesocket(in_soc);
             }
         }
     }
