@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
                 config.sin_family      = AF_INET;
                 config.sin_addr.s_addr = htonl(INADDR_ANY);
                 config.sin_port        = htons(port);
-                if (bind(soc, (sockaddr *) &config, sizeof(config)) == SOCKET_ERROR) {
+                if (bind(soc, reinterpret_cast<sockaddr *>(&config), sizeof(config)) == SOCKET_ERROR) {
                     fprintf(stderr, "Socket bind failed\n");
                     rc = EXIT_FAILURE;
                 } else {
@@ -292,6 +292,7 @@ int main(int argc, char **argv) {
                             flag = false;
                         }
                     }
+                    delete []buffer;
                 }
 
                 // close socket
