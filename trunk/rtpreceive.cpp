@@ -139,8 +139,23 @@ RTP: ver 2; pad 0; ext 0; cc 0; mark 1; pt  96; seq  29382; ts 3827743364; ssrc 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <conio.h>
-#include <winsock2.h>
+
+#if defined (WIN32)
+#  include <conio.h>
+#  include <winsock2.h>
+#  define CLOSE(soc)        closesocket(soc)
+#else
+#  include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  define SOCKET            int
+#  define INVALID_SOCKET    (-1)
+#  define SOCKET_ERROR      (-1)
+#  define SD_RECEIVE        SHUT_RD
+#  define SD_SEND           SHUT_WR
+#  define CLOSE(soc)        close(soc)
+#endif
 
 #include "rtppacket.h"
 
@@ -172,7 +187,7 @@ SOCKET open_input(unsigned short port, sockaddr *addr, int addrlen) {
         if (bind(soc, addr, addrlen) == SOCKET_ERROR) {
             shutdown(soc, SD_RECEIVE);
             fprintf(stderr, "Input socket bind to %hu failed\n", port);
-            closesocket(soc);
+            CLOSE(soc);
             soc = INVALID_SOCKET;
         } else {
             printf("Listening on port %hu\n", port);
@@ -207,7 +222,7 @@ SOCKET open_output(unsigned short port, sockaddr *addr, int addrlen) {
 
 
 // main app
-int main(int argc, char **argv) {
+int main(int argc, char * const argv[]) {
     int rc = EXIT_SUCCESS;
 
     printf("\nRTP receive %s\n", VERSION_STR);
@@ -238,108 +253,112 @@ int main(int argc, char **argv) {
         }
 
         // initialize windows socket library
+#if defined (WIN32)
         WORD wVersionRequested = MAKEWORD(2, 2);            // version 2.2
         WSADATA wsaData;
         int err = WSAStartup(wVersionRequested, &wsaData);  // requires wsock32.lib
         if (err != 0) {
             fprintf(stderr, "WSAStartup failure\n");
+            exit(EXIT_FAILURE);
+        }
+#endif  // WIN32
+
+        // open sockets
+        SOCKET in_soc  = INVALID_SOCKET;
+        SOCKET out_soc = INVALID_SOCKET;
+        sockaddr addr;
+        int addrlen = sizeof(addr);
+        in_soc = open_input(in_port, &addr, addrlen);
+        if (out_port != 0) {
+            out_soc = open_output(out_port, &addr, addrlen);
+        }
+        if ((in_soc == INVALID_SOCKET) ||
+            ((out_soc == INVALID_SOCKET) && (out_port != 0))) {
+            rc = EXIT_FAILURE;
         } else {
 
-            // open sockets
-            SOCKET in_soc  = INVALID_SOCKET;
-            SOCKET out_soc = INVALID_SOCKET;
-            sockaddr addr;
-            int addrlen = sizeof(addr);
-            in_soc = open_input(in_port, &addr, addrlen);
-            if (out_port != 0) {
-                out_soc = open_output(out_port, &addr, addrlen);
-            }
-            if ((in_soc == INVALID_SOCKET) ||
-                ((out_soc == INVALID_SOCKET) && (out_port != 0))) {
-                rc = EXIT_FAILURE;
-            } else {
-
-                // receive data
-                char *buffer = new char[MAX_BUFFER_LEN];
-                int rtp_pool_num = 0;
-                RtpPacket rtp_pool[2];
-                RtpPacket *rtp = &rtp_pool[rtp_pool_num];
-                RtpPacket *rtp_prev = rtp;
-                bool firstTime_flag = true;
-                bool flag = true;
-                while (flag) {
-                    int n = recv(in_soc, buffer, MAX_BUFFER_LEN, 0);
-                    if (n > 0) {
-                        rtp->parse(buffer, n);
+            // receive data
+            char *buffer = new char[MAX_BUFFER_LEN];
+            int rtp_pool_num = 0;
+            RtpPacket rtp_pool[2];
+            RtpPacket *rtp = &rtp_pool[rtp_pool_num];
+            RtpPacket *rtp_prev = rtp;
+            bool firstTime_flag = true;
+            bool flag = true;
+            while (flag) {
+                int n = recv(in_soc, buffer, MAX_BUFFER_LEN, 0);
+                if (n > 0) {
+                    rtp->parse(buffer, n);
 //                        rtp->print();
-                        if (!firstTime_flag) {
-                            rtp->checkOrder(rtp_prev);
-                        }
-
-                        // retransmit
-                        if (out_soc != INVALID_SOCKET) {
-                            if (zeroTimestamp_flag) {
-                                rtp->timestamp = 0;
-                            }
-                            rtp->store(buffer, n);
-                            int m = sendto(out_soc, buffer, n, 0, &addr, addrlen);
-                            if (m != n) {
-                                fprintf(stderr, "Retransmit failure\n");
-                            }
-                        }
-
-                        // flip-flop rtp objects
-                        rtp_prev = rtp;
-                        rtp_pool_num = (rtp_pool_num + 1) % 2;
-                        rtp = &rtp_pool[rtp_pool_num];
+                    if (!firstTime_flag) {
+                        rtp->checkOrder(rtp_prev);
                     }
 
-                    // cui
-                    if (_kbhit()) {
-                        int c = _getch();
-                        if (c == 0x20) {
-                            printf("\nPaused, press Esc to exit, Space to single-step, or Enter to resume ...");
-                            c = _getch();
-                            printf("\n");
+                    // retransmit
+                    if (out_soc != INVALID_SOCKET) {
+                        if (zeroTimestamp_flag) {
+                            rtp->timestamp = 0;
                         }
-                        switch (c) {
-
-                        case 0x1B:  // escape
-                            flag = false;
-                            break;
-
-                        case 0x20:  // space
-                            _ungetch(c);
-                            break;
-
-                        case 't':
-                            zeroTimestamp_flag = true;
-                            printf("Setting retransmit timestamp to zero\n");
-                            break;
-
-                        case 'T':
-                            zeroTimestamp_flag = false;
-                            printf("Not setting retransmit timestamp to zero\n");
-                            break;
-
-                        default:
-                            break;
+                        rtp->store(buffer, n);
+                        int m = sendto(out_soc, buffer, n, 0, &addr, addrlen);
+                        if (m != n) {
+                            fprintf(stderr, "Retransmit failure\n");
                         }
                     }
-                    firstTime_flag = false;
+
+                    // flip-flop rtp objects
+                    rtp_prev = rtp;
+                    rtp_pool_num = (rtp_pool_num + 1) % 2;
+                    rtp = &rtp_pool[rtp_pool_num];
                 }
-                delete []buffer;
-            }
 
-            // close sockets
-            if (out_soc != INVALID_SOCKET) {
-                shutdown(out_soc, SD_SEND);
-                closesocket(out_soc);
+                // cui
+#if defined (WIN32)
+                if (_kbhit()) {
+                    int c = _getch();
+                    if (c == 0x20) {
+                        printf("\nPaused, press Esc to exit, Space to single-step, or Enter to resume ...");
+                        c = _getch();
+                        printf("\n");
+                    }
+                    switch (c) {
+
+                    case 0x1B:  // escape
+                        flag = false;
+                        break;
+
+                    case 0x20:  // space
+                        _ungetch(c);
+                        break;
+
+                    case 't':
+                        zeroTimestamp_flag = true;
+                        printf("Setting retransmit timestamp to zero\n");
+                        break;
+
+                    case 'T':
+                        zeroTimestamp_flag = false;
+                        printf("Not setting retransmit timestamp to zero\n");
+                        break;
+
+                    default:
+                        break;
+                    }
+                }
+#endif  // WIN32
+                firstTime_flag = false;
             }
-            if (in_soc != INVALID_SOCKET) {
-                shutdown(in_soc, SD_RECEIVE);
-                closesocket(in_soc);
-            }
+            delete []buffer;
+        }
+
+        // close sockets
+        if (out_soc != INVALID_SOCKET) {
+            shutdown(out_soc, SD_SEND);
+            CLOSE(out_soc);
+        }
+        if (in_soc != INVALID_SOCKET) {
+            shutdown(in_soc, SD_RECEIVE);
+            CLOSE(in_soc);
         }
     }
 
