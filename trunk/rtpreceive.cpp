@@ -158,9 +158,10 @@ RTP: ver 2; pad 0; ext 0; cc 0; mark 1; pt  96; seq  29382; ts 3827743364; ssrc 
 #endif
 
 #include "rtppacket.h"
+#include "pcapfile.h"
 
 
-#define VERSION_STR  "V1.0"
+#define VERSION_STR  "V1.1"
 
 #define MAX_BUFFER_LEN      (16384)
 
@@ -221,6 +222,15 @@ SOCKET open_output(unsigned short port, sockaddr *addr, int addrlen) {
 }
 
 
+void printUsage(const char *basename) {
+    printf("\nUsage:   %s -s src_port [-d dst_port] [-f pcap_filename]\n", basename);
+    printf("         src_port       UDP port on which to receive RTP data\n");
+    printf("         dst_port       UDP port on which to retransmit RTP data\n");
+    printf("         pcap_filename  Name of pcap file containing RTP data\n");
+    exit(EXIT_FAILURE);
+}
+
+
 // main app
 int main(int argc, char * const argv[]) {
     int rc = EXIT_SUCCESS;
@@ -228,139 +238,190 @@ int main(int argc, char * const argv[]) {
     printf("\nRTP receive %s\n", VERSION_STR);
     printf("    Project web site: http://code.google.com/p/rtpreceive/\n\n");
 
+    const char *pcap_filename = NULL;
+    unsigned short in_port  = 0;
+    unsigned short out_port = 0;
+
     // check command line
     char *basename = NULL;
-    if ((argc != 2) && (argc != 3)) {
-        basename = strrchr(argv[0], '/');
-        if (basename == NULL) {
-            basename = strrchr(argv[0], '\\');
-        }
-        if (basename == NULL) {
-            basename = argv[0];
-        } else {
-            basename++;
-        }
-        printf("Usage:   %s in_port [out_port]\n", basename);
-        printf("         in_port  on which to receive RTP data\n");
-        printf("         out_port on which to retransmit RTP data (optional)\n");
-        rc = EXIT_FAILURE;
+    basename = strrchr(argv[0], '/');
+    if (basename == NULL) {
+        basename = strrchr(argv[0], '\\');
+    }
+    if (basename == NULL) {
+        basename = argv[0];
     } else {
-        unsigned short in_port  = 0;
-        unsigned short out_port = 0;
-        sscanf(argv[1], "%hu", &in_port);
-        if (argc >= 3) {
-            sscanf(argv[2], "%hu", &out_port);
-        }
+        basename++;
+    }
+    for (int i = 1; i < argc; i++) {
+        if ((argv[i][0] == '-') && (argv[i][2] == '\0')) {
+            switch (argv[i][1]) {
 
-        // initialize windows socket library
-#if defined (WIN32)
-        WORD wVersionRequested = MAKEWORD(2, 2);            // version 2.2
-        WSADATA wsaData;
-        int err = WSAStartup(wVersionRequested, &wsaData);  // requires wsock32.lib
-        if (err != 0) {
-            fprintf(stderr, "WSAStartup failure\n");
-            exit(EXIT_FAILURE);
-        }
-#endif  // WIN32
-
-        // open sockets
-        SOCKET in_soc  = INVALID_SOCKET;
-        SOCKET out_soc = INVALID_SOCKET;
-        sockaddr addr;
-        int addrlen = sizeof(addr);
-        in_soc = open_input(in_port, &addr, addrlen);
-        if (out_port != 0) {
-            out_soc = open_output(out_port, &addr, addrlen);
-        }
-        if ((in_soc == INVALID_SOCKET) ||
-            ((out_soc == INVALID_SOCKET) && (out_port != 0))) {
-            rc = EXIT_FAILURE;
-        } else {
-
-            // receive data
-            char *buffer = new char[MAX_BUFFER_LEN];
-            int rtp_pool_num = 0;
-            RtpPacket rtp_pool[2];
-            RtpPacket *rtp = &rtp_pool[rtp_pool_num];
-            RtpPacket *rtp_prev = rtp;
-            bool firstTime_flag = true;
-            bool flag = true;
-            while (flag) {
-                int n = recv(in_soc, buffer, MAX_BUFFER_LEN, 0);
-                if (n > 0) {
-                    rtp->parse(buffer, n);
-//                        rtp->print();
-                    if (!firstTime_flag) {
-                        rtp->checkOrder(rtp_prev);
-                    }
-
-                    // retransmit
-                    if (out_soc != INVALID_SOCKET) {
-                        if (zeroTimestamp_flag) {
-                            rtp->timestamp = 0;
-                        }
-                        rtp->store(buffer, n);
-                        int m = sendto(out_soc, buffer, n, 0, &addr, addrlen);
-                        if (m != n) {
-                            fprintf(stderr, "Retransmit failure\n");
-                        }
-                    }
-
-                    // flip-flop rtp objects
-                    rtp_prev = rtp;
-                    rtp_pool_num = (rtp_pool_num + 1) % 2;
-                    rtp = &rtp_pool[rtp_pool_num];
+            case 'f':
+                if (++i < argc) {
+                    pcap_filename = argv[i];
+                } else {
+                    fprintf(stderr, "No filename specified with '-f' option\n");
+                    printUsage(basename);
                 }
+                break;
 
-                // cui
-#if defined (WIN32)
-                if (_kbhit()) {
-                    int c = _getch();
-                    if (c == 0x20) {
-                        printf("\nPaused, press Esc to exit, Space to single-step, or Enter to resume ...");
-                        c = _getch();
-                        printf("\n");
-                    }
-                    switch (c) {
-
-                    case 0x1B:  // escape
-                        flag = false;
-                        break;
-
-                    case 0x20:  // space
-                        _ungetch(c);
-                        break;
-
-                    case 't':
-                        zeroTimestamp_flag = true;
-                        printf("Setting retransmit timestamp to zero\n");
-                        break;
-
-                    case 'T':
-                        zeroTimestamp_flag = false;
-                        printf("Not setting retransmit timestamp to zero\n");
-                        break;
-
-                    default:
-                        break;
-                    }
+            case 's':
+                if (++i < argc) {
+                    sscanf(argv[i], "%hu", &in_port);;
+                } else {
+                    fprintf(stderr, "No port specified with '-s' option\n");
+                    printUsage(basename);
                 }
-#endif  // WIN32
-                firstTime_flag = false;
+                break;
+
+            case 'd':
+                if (++i < argc) {
+                    sscanf(argv[i], "%hu", &out_port);;
+                } else {
+                    fprintf(stderr, "No port specified with '-d' option\n");
+                    printUsage(basename);
+                }
+                break;
             }
-            delete []buffer;
-        }
-
-        // close sockets
-        if (out_soc != INVALID_SOCKET) {
-            shutdown(out_soc, SD_SEND);
-            CLOSE(out_soc);
-        }
-        if (in_soc != INVALID_SOCKET) {
-            shutdown(in_soc, SD_RECEIVE);
-            CLOSE(in_soc);
+        } else {
+            fprintf(stderr, "Unrecognized option: \"%s\"\n", argv[i]);
+            printUsage(basename);
         }
     }
+
+    // open pcap file
+    PcapFile pcap;
+    if (pcap_filename != NULL) {
+        pcap.open(pcap_filename);
+    }
+
+    // initialize windows socket library
+#if defined (WIN32)
+    WORD wVersionRequested = MAKEWORD(2, 2);            // version 2.2
+    WSADATA wsaData;
+    int err = WSAStartup(wVersionRequested, &wsaData);  // requires wsock32.lib
+    if (err != 0) {
+        fprintf(stderr, "WSAStartup failure\n");
+        exit(EXIT_FAILURE);
+    }
+#endif  // WIN32
+
+    // open sockets
+    SOCKET in_soc  = INVALID_SOCKET;
+    SOCKET out_soc = INVALID_SOCKET;
+    sockaddr addr;
+    int addrlen = sizeof(addr);
+    if ((in_port != 0) && (pcap_filename == NULL)) {
+        in_soc = open_input(in_port, &addr, addrlen);
+    }
+    if (out_port != 0) {
+        out_soc = open_output(out_port, &addr, addrlen);
+    }
+    if (((in_soc  == INVALID_SOCKET) && (in_port  != 0) && (pcap_filename == NULL)) ||
+        ((out_soc == INVALID_SOCKET) && (out_port != 0))) {
+        rc = EXIT_FAILURE;
+    } else {
+
+        // main loop
+        char *buffer = NULL;
+        char *socData = new char[MAX_BUFFER_LEN];
+        int rtp_pool_num = 0;
+        RtpPacket rtp_pool[2];
+        RtpPacket *rtp = &rtp_pool[rtp_pool_num];
+        RtpPacket *rtp_prev = rtp;
+        bool firstTime_flag = true;
+        bool flag = true;
+        while (flag) {
+
+            // receive data
+            int n = 0;
+            if (in_soc != INVALID_SOCKET) {
+                buffer = socData;
+                n = recv(in_soc, buffer, MAX_BUFFER_LEN, 0);
+            } else {
+                if (pcap.readPacket()) {
+                    if (pcap.getDestinationPort() == in_port) {
+                        buffer = static_cast <char *> (pcap.getPacketData());
+                        n = pcap.getPacketLength();
+                        Sleep(10);
+                    }
+                }
+            }
+            if (n > 0) {
+                rtp->parse(buffer, n);
+                rtp->print();
+                if (!firstTime_flag) {
+                    rtp->checkOrder(rtp_prev);
+                }
+
+                // retransmit
+                if (out_soc != INVALID_SOCKET) {
+                    if (zeroTimestamp_flag) {
+                        rtp->timestamp = 0;
+                    }
+                    rtp->store(buffer, n);
+                    int m = sendto(out_soc, buffer, n, 0, &addr, addrlen);
+                    if (m != n) {
+                        fprintf(stderr, "Retransmit failure\n");
+                    }
+                }
+
+                // flip-flop rtp objects
+                rtp_prev = rtp;
+                rtp_pool_num = (rtp_pool_num + 1) % 2;
+                rtp = &rtp_pool[rtp_pool_num];
+            }
+
+            // cui
+#if defined (WIN32)
+            if (_kbhit()) {
+                int c = _getch();
+                if (c == 0x20) {
+                    printf("\nPaused, press Esc to exit, Space to single-step, or Enter to resume ...");
+                    c = _getch();
+                    printf("\n");
+                }
+                switch (c) {
+
+                case 0x1B:  // escape
+                    flag = false;
+                    break;
+
+                case 0x20:  // space
+                    _ungetch(c);
+                    break;
+
+                case 't':
+                    zeroTimestamp_flag = true;
+                    printf("Setting retransmit timestamp to zero\n");
+                    break;
+
+                case 'T':
+                    zeroTimestamp_flag = false;
+                    printf("Not setting retransmit timestamp to zero\n");
+                    break;
+
+                default:
+                    break;
+                }
+            }
+#endif  // WIN32
+            firstTime_flag = false;
+        }
+        delete []socData;
+    }
+
+    // close sockets
+    if (out_soc != INVALID_SOCKET) {
+        shutdown(out_soc, SD_SEND);
+        CLOSE(out_soc);
+    }
+    if (in_soc != INVALID_SOCKET) {
+        shutdown(in_soc, SD_RECEIVE);
+        CLOSE(in_soc);
+    }
+    pcap.close();
 
     return rc;
 }
