@@ -253,6 +253,9 @@ int main(int argc, char * const argv[]) {
     } else {
         basename++;
     }
+    if (argc <= 1) {
+        printUsage(basename);
+    }
     for (int i = 1; i < argc; i++) {
         if ((argv[i][0] == '-') && (argv[i][2] == '\0')) {
             switch (argv[i][1]) {
@@ -344,7 +347,9 @@ int main(int argc, char * const argv[]) {
                     if (pcap.getDestinationPort() == in_port) {
                         buffer = static_cast <char *> (pcap.getPacketData());
                         n = pcap.getPacketLength();
+#if defined (WIN32)
                         Sleep(10);
+#endif  // WIN32
                     }
                 }
             }
