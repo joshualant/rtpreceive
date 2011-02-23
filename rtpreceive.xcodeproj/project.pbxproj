@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		38161E9513148BB100C16028 /* pcapfile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 38161E9313148BB100C16028 /* pcapfile.cpp */; };
 		38F9C10E1303679200F8A404 /* rtpreceive.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 38F9C10D1303679200F8A404 /* rtpreceive.cpp */; };
 		38F9C110130367B000F8A404 /* rtppacket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 38F9C10F130367B000F8A404 /* rtppacket.cpp */; };
 		8DD76F6A0486A84900D96B5E /* rtpreceive.1 in CopyFiles */ = {isa = PBXBuildFile; fileRef = C6859E8B029090EE04C91782 /* rtpreceive.1 */; };
@@ -26,6 +27,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		38161E9313148BB100C16028 /* pcapfile.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = pcapfile.cpp; sourceTree = "<group>"; };
+		38161E9413148BB100C16028 /* pcapfile.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = pcapfile.h; sourceTree = "<group>"; };
 		38F9C10D1303679200F8A404 /* rtpreceive.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = rtpreceive.cpp; sourceTree = "<group>"; };
 		38F9C10F130367B000F8A404 /* rtppacket.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = rtppacket.cpp; sourceTree = "<group>"; };
 		38F9C111130367C200F8A404 /* rtppacket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = rtppacket.h; sourceTree = "<group>"; };
@@ -48,6 +51,8 @@
 		08FB7794FE84155DC02AAC07 /* rtpreceive */ = {
 			isa = PBXGroup;
 			children = (
+				38161E9313148BB100C16028 /* pcapfile.cpp */,
+				38161E9413148BB100C16028 /* pcapfile.h */,
 				08FB7795FE84155DC02AAC07 /* Source */,
 				C6859E8C029090F304C91782 /* Documentation */,
 				1AB674ADFE9D54B511CA2CBB /* Products */,
@@ -127,6 +132,7 @@
 			files = (
 				38F9C10E1303679200F8A404 /* rtpreceive.cpp in Sources */,
 				38F9C110130367B000F8A404 /* rtppacket.cpp in Sources */,
+				38161E9513148BB100C16028 /* pcapfile.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

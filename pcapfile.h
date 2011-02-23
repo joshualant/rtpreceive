@@ -31,7 +31,7 @@
 
 #include <stdio.h>
 
-#include "stdint.h"
+#include <stdint.h>
 
 /* Pcap file format:
    http://wiki.wireshark.org/Development/LibpcapFileFormat
