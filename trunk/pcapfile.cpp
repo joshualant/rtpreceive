@@ -55,10 +55,8 @@ PcapFile::~PcapFile() {
     if (fp != NULL) {
         this->close();
     }
-    if (pcapData   != NULL) {
-        delete []pcapData;
-        pcapData    = NULL;
-    }
+    delete []pcapData;
+    pcapData        = NULL;
     datagram        = NULL;
     datagram_len    = 0;
 }
@@ -68,13 +66,11 @@ void PcapFile::clear() {
     if (fp != NULL) {
         this->close();
     }
-    if (pcapData != NULL) {
-        delete []pcapData;
-        pcapData = NULL;
-    }
+    delete []pcapData;
+    pcapData        = NULL;
     datagram        = NULL;
     datagram_len    = 0;
-    byteSwap_flag = false;
+    byteSwap_flag   = false;
     clearHeader();
     clearPacket();
     clearMac();
@@ -206,7 +202,7 @@ bool PcapFile::readFileHeader() {
 }
 
 
-void PcapFile::printFileHeader() {
+void PcapFile::printFileHeader() const {
     printf("PcapFile.header magic: 0x%08X ver: %hu.%hu zone: %d sigfigs: %u snaplen: %u network: %u\n",
         header.magic_number,
         header.version_major,
@@ -240,7 +236,7 @@ bool PcapFile::readPacket() {
                         clearTcp();
                         clearUdp();
                         if (n >= sizeof(mac)) {
-                            memcpy(&mac, pcapData, sizeof (mac));
+                            memcpy(&mac, pcapData, sizeof(mac));
                             mac.ether_type = ntohs(mac.ether_type);
                             if (mac.ether_type == MAC_ETHER_TYPE_IPV4) {
                                 if (n >= (sizeof(mac) + sizeof(ipv4))) {
@@ -289,7 +285,7 @@ bool PcapFile::readPacket() {
 }
 
 
-void PcapFile::printPacket() {
+void PcapFile::printPacket() const {
     printf("PcapFile.packet timestamp: %u.%06u sec  len: %u/%u\n",
         packet.ts_sec,
         packet.ts_usec,
@@ -298,37 +294,37 @@ void PcapFile::printPacket() {
 }
 
 
-void *PcapFile::getPacketData() {
+void *PcapFile::getPacketData() const {
     return datagram;
 }
 
 
-uint16_t PcapFile::getPacketLength() {
+uint16_t PcapFile::getPacketLength() const {
     return datagram_len;
 }
 
 
-uint8_t PcapFile::getIPv4HeaderVersion() {
+uint8_t PcapFile::getIPv4HeaderVersion() const {
     return (ipv4.ver_ihl & 0xF0) >> 4;
 }
 
 
-uint8_t PcapFile::getIPv4HeaderLength() {
+uint8_t PcapFile::getIPv4HeaderLength() const {
     return (ipv4.ver_ihl & 0x0F) * 4;
 }
 
 
-uint8_t PcapFile::getTcpHeaderLength() {
+uint8_t PcapFile::getTcpHeaderLength() const {
     return static_cast <uint8_t> ((tcp.control & 0xF000) >> 12) * 4;
 }
 
 
-uint8_t PcapFile::getUdpHeaderLength() {
+uint8_t PcapFile::getUdpHeaderLength() const {
     return sizeof(udp);
 }
 
 
-uint16_t PcapFile::getSourcePort() {
+uint16_t PcapFile::getSourcePort() const {
     uint16_t port = 0;
 
     if (mac.ether_type == MAC_ETHER_TYPE_IPV4) {
@@ -345,7 +341,7 @@ uint16_t PcapFile::getSourcePort() {
 }
 
 
-uint16_t PcapFile::getDestinationPort() {
+uint16_t PcapFile::getDestinationPort() const {
     uint16_t port = 0;
 
     if (mac.ether_type == MAC_ETHER_TYPE_IPV4) {
@@ -362,7 +358,7 @@ uint16_t PcapFile::getDestinationPort() {
 }
 
 
-uint32_t PcapFile::getSourceIpAddress() {
+uint32_t PcapFile::getSourceIpAddress() const {
     uint32_t addr = INADDR_NONE;
 
     if (mac.ether_type == MAC_ETHER_TYPE_IPV4) {
@@ -375,7 +371,7 @@ uint32_t PcapFile::getSourceIpAddress() {
 }
 
 
-uint32_t PcapFile::getDestinationIpAddress() {
+uint32_t PcapFile::getDestinationIpAddress() const {
     uint32_t addr = INADDR_NONE;
 
     if (mac.ether_type == MAC_ETHER_TYPE_IPV4) {
