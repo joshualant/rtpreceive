@@ -28,10 +28,16 @@
  *
  */
 
+#ifndef PCAPFILE_H_
+#define PCAPFILE_H_
 
 #include <stdio.h>
 
-#include <stdint.h>
+#if defined (WIN32)
+#  include "stdint.h"
+#else
+#  include <stdint.h>
+#endif
 
 /* Pcap file format:
    http://wiki.wireshark.org/Development/LibpcapFileFormat
@@ -138,18 +144,18 @@ class PcapFile {
     bool     open(const char *filename);
     void     close();
     bool     readPacket();
-    void     printPacket();
-    void     printFileHeader();
-    void    *getPacketData();
-    uint16_t getPacketLength();
-    uint8_t  getIPv4HeaderVersion();
-    uint8_t  getIPv4HeaderLength();
-    uint8_t  getTcpHeaderLength();
-    uint8_t  getUdpHeaderLength();
-    uint16_t getSourcePort();
-    uint16_t getDestinationPort();
-    uint32_t getSourceIpAddress();
-    uint32_t getDestinationIpAddress();
+    void     printPacket() const;
+    void     printFileHeader() const;
+    void    *getPacketData() const;
+    uint16_t getPacketLength() const;
+    uint8_t  getIPv4HeaderVersion() const;
+    uint8_t  getIPv4HeaderLength() const;
+    uint8_t  getTcpHeaderLength() const;
+    uint8_t  getUdpHeaderLength() const;
+    uint16_t getSourcePort() const;
+    uint16_t getDestinationPort() const;
+    uint32_t getSourceIpAddress() const;
+    uint32_t getDestinationIpAddress() const;
 
   protected:
     void     clearHeader();
@@ -164,3 +170,5 @@ class PcapFile {
     static uint16_t swap16(uint16_t n);
     static uint32_t swap32(uint32_t n);
 };
+
+#endif  // PCAPFILE_H_

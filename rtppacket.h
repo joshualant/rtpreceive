@@ -28,9 +28,10 @@
  *
  */
 
+#ifndef RTPPACKET_H_
+#define RTPPACKET_H_
 
 #include <stdio.h>
-
 
 #define RTP_MAX_CSCR_COUNT  (16)
 
@@ -60,3 +61,5 @@ class RtpPacket {
     int fprint(FILE *fp);
     bool checkOrder(const RtpPacket *prev_rtp);
 };
+
+#endif  // RTPPACKET_H_
